@@ -159,7 +159,12 @@ func main() {
 		markInfinite(maxX, y)
 	}
 
-	fmt.Printf("%d,%d - %d,%d - %d elements\n", minX, minY, maxX, maxY, len(regionMap))
-	//fmt.Printf("%v\n", regionMap)
-	fmt.Printf("%v\n", regions)
+	var maxsize int
+	for _, r := range regions {
+		if !r.infinite && r.count > maxsize {
+			maxsize = r.count
+		}
+	}
+
+	fmt.Printf("largest region is %d\n", maxsize)
 }
