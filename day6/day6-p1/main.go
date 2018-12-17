@@ -12,7 +12,7 @@ type pt struct {
 }
 
 func (p pt) String() string {
-	return fmt.Sprintf("[%d:%d]", p.x, p.y)
+	return fmt.Sprintf("(%d,%d)", p.x, p.y)
 }
 
 type region struct {
@@ -23,9 +23,9 @@ type region struct {
 
 func (p *region) String() string {
 	if p.infinite {
-		return fmt.Sprintf("infinite region at %s", p.start)
+		return fmt.Sprintf("[region at %s]", p.start)
 	}
-	return fmt.Sprintf("bounded region at %s of size %d", p.start, p.count)
+	return fmt.Sprintf("[region at %s of count %d]", p.start, p.count)
 
 }
 
@@ -67,59 +67,11 @@ func (p pt) lineardistance(o pt) int {
 	return w + (p.y - o.y)
 }
 
-func (p *pos) closerToAnyRegionThan(p2 *pos) bool {
-	p.calc()
-	p2.calc()
-	for _, r := range regions {
-		if p.dists[r] < p2.dists[r] {
-			fmt.Printf("%s is closer to %s than %s\n", p.point, r, p2.point)
-			return true
-		}
-	}
-	return false
-}
-
-func (p *pos) exapandEdges() {
-	p.calc()
-	if p.nearest != nil {
-		if p.nearest.infinite {
-			return
-		}
-	}
-
-	var p2 [4]*pos
-	p2[0] = getPos(p.point.x, p.point.y-1)
-	p2[1] = getPos(p.point.x, p.point.y+1)
-	p2[2] = getPos(p.point.x-1, p.point.y)
-	p2[3] = getPos(p.point.x+1, p.point.y)
-
-	if p2[0].dists != nil && p2[1].dists != nil && p2[2].dists != nil && p2[3].dists != nil {
-		// already explored all of these points
+func markInfinite(x, y int) {
+	p := regionMap[pt{x: x, y: y}]
+	if p.nearest == nil {
 		return
 	}
-
-	if p2[0].dists == nil {
-		if p2[0].closerToAnyRegionThan(p) {
-			return
-		}
-	}
-	if p2[1].dists == nil {
-		if p2[1].closerToAnyRegionThan(p) {
-			return
-		}
-	}
-	if p2[2].dists == nil {
-		if p2[2].closerToAnyRegionThan(p) {
-			return
-		}
-	}
-	if p2[3].dists == nil {
-		if p2[3].closerToAnyRegionThan(p) {
-			return
-		}
-	}
-
-	// p is in a region that extends infinitely
 	p.nearest.infinite = true
 }
 
@@ -127,67 +79,87 @@ func makeRegion(x, y int) *region {
 	var r region
 	r.start.x = x
 	r.start.y = y
-	makePos(x, y)
 	return &r
 }
 
 func makePos(x, y int) *pos {
 	var p pos
-	p.dists = make(map[*region]int)
 	p.nearest = nil
 	p.point.x = x
 	p.point.y = y
-	regionMap[p.point] = &p
 	return &p
 }
 
-func getPos(x, y int) *pos {
-	p, ok := regionMap[pt{x: x, y: y}]
-	if !ok {
-		return makePos(x, y)
-	}
-	return p
-}
-
 func (p *pos) calc() {
-	if p.nearest != nil {
-		return
-	}
-
+	mindist := int(^uint(0) >> 1)
+	p.dists = make(map[*region]int)
 	for _, r := range regions {
 		p.dists[r] = p.point.lineardistance(r.start)
-		if p.nearest == nil {
-			p.nearest = r
-		} else if p.dists[r] < p.dists[p.nearest] {
+		if p.dists[r] < mindist {
+			mindist = p.dists[r]
 			p.nearest = r
 		}
 	}
-	p.nearest.count++
+	// check for multiple regions at same (minimum) distance
+	for _, r := range regions {
+		if p.dists[r] == mindist && r != p.nearest {
+			p.nearest = nil
+			break
+		}
+	}
 }
 
 func main() {
 	regions = make([]*region, 0, 50)
 	regionMap = make(map[pt]*pos)
+	var minX, minY, maxX, maxY int
+	var x, y int
 
 	for s := range justscan.Chan("../input.txt") {
-		var x, y int
 		_, err := fmt.Sscanf(s, "%d, %d", &x, &y)
 		must("scan coordinates", err)
+		if minX == 0 && minY == 0 && maxX == 0 && maxY == 0 {
+			minX = x
+			minY = y
+			maxX = x
+			maxY = y
+		} else {
+			if x < minX {
+				minX = x
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
+		}
 		regions = append(regions, makeRegion(x, y))
 	}
 
-	for i := 0; i < 30; i++ {
-		var prevSize int
-		prevSize = len(regionMap)
-		for _, pos := range regionMap {
-			pos.exapandEdges()
+	for x = minX - 1; x <= maxX+1; x++ {
+		for y = minY - 1; y <= maxY+1; y++ {
+			p := makePos(x, y)
+			regionMap[pt{x: x, y: y}] = p
+			p.calc()
+			if p.nearest != nil {
+				p.nearest.count++
+			}
 		}
-		if len(regionMap) == prevSize {
-			break
-		}
-		//fmt.Printf("regionMap size: %d\n", len(regionMap))
 	}
-	fmt.Printf("regions: %v\n", regions)
-	fmt.Printf("regionMap: %v\n", regionMap)
+	for x = minX - 1; x <= maxX+1; x++ {
+		markInfinite(x, minY)
+		markInfinite(x, maxY)
+	}
+	for y = minY - 1; y <= maxY+1; y++ {
+		markInfinite(minX, y)
+		markInfinite(maxX, y)
+	}
 
+	fmt.Printf("%d,%d - %d,%d - %d elements\n", minX, minY, maxX, maxY, len(regionMap))
+	//fmt.Printf("%v\n", regionMap)
+	fmt.Printf("%v\n", regions)
 }
